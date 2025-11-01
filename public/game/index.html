@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QR-Pac Classic</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- 🏠 ปุ่มกลับหน้า UserHome -->
+    <button id="backHomeBtn" class="back-btn">🏠 กลับหน้า UserHome</button>
+
+    <header>
+      <h1>QR-Pac Classic</h1>
+      <div class="panel">
+        <input id="qrText" type="hidden" value="" />
+        <p style="font-size: 14px; color: #888;">
+          กำลังใช้ QR จากระบบ OpenHouse-QR
+        </p>
+        <label>
+          ขนาด QR (โมดูล)
+          <input
+            id="qrSize"
+            type="number"
+            value="57"
+            min="21"
+            max="57"
+            style="width: 72px"
+          />
+        </label>
+        <button id="makeBtn">สร้างสนามจาก QR</button>
+        <span class="tiny">
+          ปุ่มบังคับ:
+          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> หรือ ลูกศร
+        </span>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <main>
+        <div id="hud" class="hud">
+          <div class="hud-grid" style="flex: 1">
+            <div class="mcol">
+              <div class="meter hp">
+                <div class="fill" id="hpFill"></div>
+                <div class="txt">HP</div>
+                <div class="val" id="hpVal">100%</div>
+              </div>
+              <div class="meter food">
+                <div class="fill" id="foodFill"></div>
+                <div class="txt">EATEN</div>
+                <div class="val" id="foodVal">0% (0/0)</div>
+              </div>
+              <div class="meter time">
+                <div class="fill" id="timeFill"></div>
+                <div class="txt">TIME</div>
+                <div class="val" id="timeVal">5.0s</div>
+              </div>
+              <div class="meter score">
+                <div class="fill" id="scoreFill"></div>
+                <div class="txt">SCORE</div>
+                <div class="val" id="scoreVal">0 pts</div>
+              </div>
+            </div>
+          </div>
+          <div id="scanState" class="scan-state">
+            Scannable: <span class="scan-ok">YES</span>
+          </div>
+        </div>
+
+        <canvas id="game"></canvas>
+
+        <div id="overlay" class="overlay">
+          <div class="count" id="countText">QR-Pac</div>
+          <div class="msg" id="overlayMsg">กดเริ่มเพื่อเล่น</div>
+          <div class="actions">
+            <button id="startBtn">เริ่มเกม</button>
+            <button id="continueBtn" style="display: none">เล่นต่อ</button>
+            <button id="restartBtn" style="display: none">เริ่มใหม่</button>
+
+            <!-- Save flow -->
+            <button id="saveYesBtn" style="display: none">บันทึกคะแนน</button>
+            <button id="saveNoBtn" class="btn-secondary" style="display: none">
+              ไม่บันทึกและเริ่มเกมใหม่
+            </button>
+            <div id="saveForm" style="display: none; gap: 8px; align-items: center">
+              <input
+                id="playerNameInput"
+                class="name-input"
+                type="text"
+                maxlength="16"
+                placeholder="ใส่ชื่อผู้เล่น (สูงสุด 16 ตัว)"
+              />
+              <button id="saveConfirmBtn">ยืนยัน</button>
+              <button id="saveCancelBtn" class="btn-secondary">ยกเลิก</button>
+            </div>
+          </div>
+          <div class="sub">เวลาเล่น <b>15 วินาที</b> • ชนะถ้า QR สแกนไม่ได้</div>
+        </div>
+      </main>
+
+      <div id="joystick" class="joy" aria-label="จอยสติ๊กเสมือน">
+        <div class="ring"></div>
+        <div class="stick"></div>
+        <div class="dot"></div>
+      </div>
+
+      <aside>
+        <div class="card" id="sampleCard">
+          <canvas
+            id="qrCanvas"
+            width="330"
+            height="330"
+            style="width: 100%; border-radius: 10px; background: #fff"
+          ></canvas>
+          <div class="hint">ตัวอย่าง QR ที่ใช้สร้างสนาม</div>
+        </div>
+
+        <div class="card hint">
+          เวอร์ชันเรียบง่าย: QR สีดำทุกโมดูล = เม็ดให้กิน ไม่มีโกสต์ ไม่มี กำแพง
+        </div>
+
+        <div class="card" id="boardCard">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <div style="font-weight: 800">🏆 Top Scores</div>
+            <button id="refreshBoardBtn" class="btn-secondary" style="padding:6px 10px; font-size:12px">
+              รีเฟรช
+            </button>
+          </div>
+          <ol id="boardList" style="text-align:left; margin:10px 0 0; padding-left:1.25em"></ol>
+          <div id="boardEmpty" class="hint">ยังไม่มีคะแนน</div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="mobile-ctrl">
+      <button id="pauseBtn" title="หยุด/เดินต่อ">พัก</button>
+      <button id="rebuildBtn" title="สร้างใหม่">เริ่มใหม่</button>
+    </div>
+
+    <!-- QR libs -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+    <!-- ✅ ตั้งค่า QR URL จากระบบ OpenHouse -->
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const uuid = params.get("uuid");
+
+      const qrUrl = uuid
+        ? `http://${window.location.hostname}:5173/uuid/${uuid}`
+        : `http://${window.location.hostname}:5173`;
+
+      document.addEventListener("DOMContentLoaded", () => {
+        const qrText = document.getElementById("qrText");
+        if (qrText) qrText.value = qrUrl;
+
+        // 🏠 ปุ่มกลับหน้า UserHomePage
+        const backBtn = document.getElementById("backHomeBtn");
+        backBtn.addEventListener("click", () => {
+          window.location.href = `http://${window.location.hostname}:5173/userhome`;
+        });
+      });
+    </script>
+
+    <!-- App -->
+    <script type="module" src="main.js"></script>
+
+    <style>
+      /* 🏠 ปุ่มย้อนกลับมุมขวาบน */
+      .back-btn {
+        position: fixed;
+        top: 14px;
+        right: 14px;
+        background: linear-gradient(90deg, #007bff, #00aaff);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 8px 14px;
+        font-size: 14px;
+        cursor: pointer;
+        z-index: 1000;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+        transition: background 0.2s, transform 0.1s;
+      }
+      .back-btn:hover {
+        background: linear-gradient(90deg, #0063d1, #0090ff);
+        transform: scale(1.05);
+      }
+      .back-btn:active {
+        transform: scale(0.95);
+      }
+    </style>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "qr_pac",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "main": "server.js",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.76.1",
+    "better-sqlite3": "^9.6.0",
+    "compression": "^1.8.1",
+    "crypto": "^1.0.1",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0"
+  }
+}
