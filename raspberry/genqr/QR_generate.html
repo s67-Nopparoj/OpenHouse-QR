@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <title>QR Gesture Control</title>
+
+  <!-- Mediapipe -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+  <!-- QRCodeJS -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs/qrcode.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Kanit', sans-serif;
+      background: linear-gradient(135deg,#ddd,#fff);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: #fff;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      text-align: center;
+      max-width: 500px;
+      width: 90%;
+    }
+    h1 { margin-bottom: 16px; color: #4a148c; font-size: 1.4rem; }
+    video { display: none; }
+    canvas {
+      width: 100%;
+      max-width: 400px;
+      border-radius: 12px;
+      background: #000;
+    }
+    #status { margin-top: 12px; font-size: 1rem; color: #374151; }
+    .progress {
+      margin-top: 8px;
+      height: 6px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      overflow: hidden;
+      width: 100%;
+    }
+    .progress > span {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: #2563eb;
+      transition: width 120ms linear;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal-content {
+      background: #fff;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      width: 95%;
+      max-width: 800px;
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      justify-content: center;
+    }
+    .popup-left, .popup-right { flex: 1; text-align: center; }
+    .qr-box {
+      width: 220px; height: 220px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex; align-items: center; justify-content: center;
+    }
+    #qrPopupDesc {
+      margin-top: 12px;
+      font-size: 1.3rem;
+      font-weight: bold;
+      color: #225ee0;
+    }
+    #saveStatus {
+      margin-top: 8px;
+      font-size: 1rem;
+      color: green;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>✌️ ชูสองนิ้วค้าง 3 วิ เพื่อสร้าง QR</h1>
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+    <div id="status">รอการชูสองนิ้ว...</div>
+    <div class="progress"><span id="openProgress"></span></div>
+  </div>
+
+  <div id="qrModal" class="modal">
+    <div class="modal-content">
+      <div class="popup-left">
+        <h2>QR Code</h2>
+        <div id="qrPopup" class="qr-box"></div>
+        <div id="qrPopupDesc">ID : -</div>
+        <div id="saveStatus"></div>
+        <p id="qrNotice" style="
+          margin-top: 10px;
+          color: #d32f2f;
+          font-weight: bold;
+          font-size: 1rem;
+          line-height: 1.4;
+        ">
+          📸 กรุณาถ่ายภาพ QR Code เก็บไว้<br>
+          ใช้สำหรับเช็กอินเข้าบูธ และสแกนเพื่อดูรายละเอียดในเว็บไซต์ได้
+        </p>
+      </div>
+      <div class="popup-right">
+        <h2>กล้อง</h2>
+        <video id="videoPopup" autoplay muted playsinline></video>
+        <canvas id="overlayPopup"></canvas>
+        <div class="hint">👌 ชูมือท่า OK ค้าง 2 วิ เพื่อปิด</div>
+        <div class="progress"><span id="closeProgress"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+    const SUPABASE_URL = "https://cjgabxwntlziwtwxohuu.supabase.co"; // 🔹 แทนที่ด้วย URL ของคุณ
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqZ2FieHdudGx6aXd0d3hvaHV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0NjUwNTMsImV4cCI6MjA3NTA0MTA1M30.RL8szZJuf68NzyxvwCkrqFBO97Reo3DwHZDYG3v0udk"; // 🔹 แทนที่ด้วย anon key ของคุณ
+    const video=document.getElementById('video');
+    const overlay=document.getElementById('overlay');
+    const ctx=overlay.getContext('2d');
+    const statusEl=document.getElementById('status');
+    const openProgress=document.getElementById('openProgress');
+    const qrModal=document.getElementById('qrModal');
+    const qrPopup=document.getElementById('qrPopup');
+    const qrPopupDesc=document.getElementById('qrPopupDesc');
+    const videoPopup=document.getElementById('videoPopup');
+    const overlayPopup=document.getElementById('overlayPopup');
+    const ctxPopup=overlayPopup.getContext('2d');
+    const closeProgress=document.getElementById('closeProgress');
+    const saveStatus=document.getElementById('saveStatus');
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let gestureStartTime=null;
+    let okStartTime=null;
+    let isPopupOpen=false;
+    const HOLD_TIME_TWO=3000;
+    const HOLD_TIME_OK=2000;
+
+    // ✅ ฟังก์ชันสร้าง UUID 8 ตัว
+    function generateUUID8(){ return crypto.randomUUID().slice(0,8); }
+
+    // ✅ สร้าง QR Code
+      function renderQR(targetEl,value){
+        targetEl.innerHTML='';
+        new QRCode(targetEl,{text:`http://172.23.208.1:5173/uuid/${value}`,width:200,height:200});
+      }
+
+    // ✅ บันทึก UUID ไปยัง Supabase โดยตรง
+    async function saveUUIDToDatabase(uuid) {
+      try {
+        const { data, error } = await supabase
+          .from("users") // 🔹 ชื่อตารางใน Supabase (เปลี่ยนได้)
+          .insert([{ uuid }]); // 🔹 ระบุคอลัมน์ที่ต้องการบันทึก
+
+        if (error) {
+          saveStatus.style.color = "orange";
+          saveStatus.textContent = "⚠️ ไม่สามารถบันทึกข้อมูลได้";
+          console.error(error);
+        } else {
+          saveStatus.style.color = "green";
+          saveStatus.textContent = "✅ บันทึกข้อมูลเรียบร้อย (บันทึกใน Supabase)";
+          console.log("Inserted:", data);
+        }
+      } catch (err) {
+        saveStatus.style.color = "red";
+        saveStatus.textContent = "❌ เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase";
+        console.error(err);
+      }
+    }
+
+    // ✅ แสดง QR + เริ่มบันทึก
+    function generateQR(){
+      const id=generateUUID8();
+      renderQR(qrPopup,id);
+      qrPopupDesc.textContent=`ID : ${id}`;
+      qrModal.style.display='flex';
+      isPopupOpen=true;
+      statusEl.textContent='✅ สร้าง QR สำเร็จ';
+      openProgress.style.width='0%';
+      closeProgress.style.width='0%';
+      saveStatus.style.color = "gray";
+      saveStatus.textContent="⏳ กำลังบันทึก...";
+      // 🔹 บันทึก UUID เข้าฐานข้อมูล
+      saveUUIDToDatabase(id);
+    }
+
+    // ✅ ปิด QR popup
+    function closeQR(){
+      qrModal.style.display='none';
+      isPopupOpen=false;
+      okStartTime=null;
+      statusEl.textContent='❎ ปิด QR Code แล้ว';
+    }
+
+    // ✅ ตรวจจับ gesture มือ
+    function angleBetween(a,b,c){
+      const ab={x:a.x-b.x,y:a.y-b.y,z:(a.z||0)-(b.z||0)};
+      const cb={x:c.x-b.x,y:c.y-b.y,z:(c.z||0)-(b.z||0)};
+      const dot=ab.x*cb.x+ab.y*cb.y+ab.z*cb.z;
+      const magAB=Math.sqrt(ab.x**2+ab.y**2+ab.z**2);
+      const magCB=Math.sqrt(cb.x**2+cb.y**2+cb.z**2);
+      const cos=dot/(magAB*magCB);
+      return Math.acos(Math.min(Math.max(cos,-1),1))*(180/Math.PI);
+    }
+    function fingerExtended(lm,mcp,pip,tip){
+      const ang=angleBetween(lm[mcp],lm[pip],lm[tip]);
+      return ang>160;
+    }
+    function isTwoFingerGesture(lm){
+      const indexUp=fingerExtended(lm,5,6,8);
+      const middleUp=fingerExtended(lm,9,10,12);
+      const ringDown=!fingerExtended(lm,13,14,16);
+      const pinkyDown=!fingerExtended(lm,17,18,20);
+      const thumbDown=!fingerExtended(lm,1,2,4);
+      return indexUp&&middleUp&&ringDown&&pinkyDown&&thumbDown;
+    }
+    function isOkGesture(lm){
+      const thumbTip=lm[4];
+      const indexTip=lm[8];
+      const dist=Math.hypot(thumbTip.x-indexTip.x,thumbTip.y-indexTip.y);
+      const middleUp=lm[12].y<lm[10].y;
+      const ringUp=lm[16].y<lm[14].y;
+      const pinkyUp=lm[20].y<lm[18].y;
+      return dist<0.05&&middleUp&&ringUp&&pinkyUp;
+    }
+
+    // ✅ ตั้งค่า Mediapipe
+    const hands=new Hands({ locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+    hands.setOptions({
+      maxNumHands:1, modelComplexity:1,
+      minDetectionConfidence:0.6,
+      minTrackingConfidence:0.6
+    });
+
+    // ✅ callback หลังประมวลผลมือ
+    hands.onResults((results)=>{
+      const targetVideo=isPopupOpen?videoPopup:video;
+      const targetOverlay=isPopupOpen?overlayPopup:overlay;
+      const targetCtx=isPopupOpen?ctxPopup:ctx;
+
+      targetOverlay.width=targetVideo.videoWidth||360;
+      targetOverlay.height=targetVideo.videoHeight||270;
+      targetCtx.clearRect(0,0,targetOverlay.width,targetOverlay.height);
+      if(results.image){
+        targetCtx.drawImage(results.image,0,0,targetOverlay.width,targetOverlay.height);
+      }
+
+      const lm=results.multiHandLandmarks?.[0];
+      if(!lm){
+        gestureStartTime=null; okStartTime=null;
+        openProgress.style.width='0%'; closeProgress.style.width='0%';
+        if(!isPopupOpen) statusEl.textContent='รอการชูสองนิ้ว...';
+        return;
+      }
+
+      if(isPopupOpen){
+        [4,8].forEach(i=>{
+          const pt=lm[i];
+          targetCtx.beginPath(); targetCtx.arc(pt.x*targetOverlay.width,pt.y*targetOverlay.height,6,0,2*Math.PI);
+          targetCtx.fillStyle='red'; targetCtx.fill();
+        });
+        if(isOkGesture(lm)){
+          if(!okStartTime) okStartTime=Date.now();
+          const elapsed=Date.now()-okStartTime;
+          closeProgress.style.width=Math.min(100,(elapsed/HOLD_TIME_OK)*100)+'%';
+          statusEl.textContent='👌 ถือท่า OK...';
+          if(elapsed>=HOLD_TIME_OK) closeQR();
+        }else{
+          okStartTime=null; closeProgress.style.width='0%';
+        }
+      }else{
+        [8,12].forEach(i=>{
+          const pt=lm[i];
+          targetCtx.beginPath(); targetCtx.arc(pt.x*targetOverlay.width,pt.y*targetOverlay.height,6,0,2*Math.PI);
+          targetCtx.fillStyle='blue'; targetCtx.fill();
+        });
+        if(isTwoFingerGesture(lm)){
+          if(!gestureStartTime) gestureStartTime=Date.now();
+          const elapsed=Date.now()-gestureStartTime;
+          openProgress.style.width=Math.min(100,(elapsed/HOLD_TIME_TWO)*100)+'%';
+          statusEl.textContent='✌️ ถือท่าไว้...';
+          if(elapsed>=HOLD_TIME_TWO){
+            generateQR(); gestureStartTime=null;
+            openProgress.style.width='0%';
+          }
+        }else{
+          gestureStartTime=null; openProgress.style.width='0%';
+          statusEl.textContent='✋ ยังไม่ใช่ท่าชูสองนิ้ว';
+        }
+      }
+    });
+
+    // ✅ เริ่มเปิดกล้อง
+    async function startCamera(){
+      try{
+        const stream=await navigator.mediaDevices.getUserMedia({ video:{facingMode:'user'},audio:false });
+        video.srcObject=stream; videoPopup.srcObject=stream;
+        await video.play(); await videoPopup.play();
+        const cam=new Camera(video,{onFrame:async()=>{await hands.send({image:video});},width:400,height:300});
+        cam.start();
+      }catch(err){
+        statusEl.textContent='⚠️ เปิดกล้องไม่สำเร็จ: '+(err?.message||err);
+      }
+    }
+    startCamera();
+  </script>
+</body>
+</html>
